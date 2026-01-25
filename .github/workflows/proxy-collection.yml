@@ -27,6 +27,8 @@ jobs:
         pip install -r simple_requirements.txt
 
     - name: Run proxy collection
+      env:
+        PYTHONUNBUFFERED: 1
       run: |
         python simple_proxy_collector.py
 
