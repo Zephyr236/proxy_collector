@@ -22,7 +22,7 @@ if sys.stderr.encoding is None or sys.stderr.encoding.upper() != 'UTF-8':
 
 # 简单配置
 CONFIG = {
-    "crawler_workers": 2,
+    "crawler_workers": 5,  # 增加爬虫工作者数量以支持更多源
     "validator_workers": 10,
     "timeout": 15,
     "test_url": "https://httpbin.org/ip",
@@ -63,36 +63,43 @@ def save_proxies(proxies: List[str]):
     return True
 
 def fetch_geonode_proxies() -> List[str]:
-    """从Geonode获取代理"""
+    """从Geonode获取代理（多页）"""
     proxies = []
-    url = "https://proxylist.geonode.com/api/proxy-list?limit=500&page=1&sort_by=lastChecked&sort_type=desc"
-
-    # 增加重试机制
+    max_pages = 3  # 限制页数以避免请求过多
     max_retries = 2
-    for attempt in range(max_retries):
-        try:
-            timeout = CONFIG["timeout"] * (attempt + 1)  # 每次重试增加超时时间
-            response = requests.get(url, timeout=timeout)
-            if response.status_code == 200:
-                data = response.json()
-                for item in data.get("data", []):
-                    ip = item.get("ip")
-                    port = item.get("port")
-                    protocols = item.get("protocols", [])
 
-                    if ip and port and protocols:
-                        protocol = protocols[0] if protocols else "http"
-                        proxy = f"{protocol}://{ip}:{port}"
-                        proxies.append(proxy)
-                break  # 成功则退出重试循环
-            else:
-                print(f"Geonode请求失败 (HTTP {response.status_code})，重试 {attempt+1}/{max_retries}")
-        except Exception as e:
-            if attempt == max_retries - 1:
-                print(f"Geonode爬取失败: {e}")
-            else:
-                print(f"Geonode爬取失败，重试 {attempt+1}/{max_retries}: {e}")
-                time.sleep(2)  # 重试前等待
+    for page in range(1, max_pages + 1):
+        url = f"https://proxylist.geonode.com/api/proxy-list?limit=500&page={page}&sort_by=lastChecked&sort_type=desc"
+
+        for attempt in range(max_retries):
+            try:
+                timeout = CONFIG["timeout"] * (attempt + 1)
+                response = requests.get(url, timeout=timeout)
+                if response.status_code == 200:
+                    data = response.json()
+                    items = data.get("data", [])
+                    if not items:
+                        break  # 没有数据则停止翻页
+
+                    for item in items:
+                        ip = item.get("ip")
+                        port = item.get("port")
+                        protocols = item.get("protocols", [])
+
+                        if ip and port and protocols:
+                            protocol = protocols[0] if protocols else "http"
+                            proxy = f"{protocol}://{ip}:{port}"
+                            proxies.append(proxy)
+                    print(f"Geonode 第 {page} 页: 获取 {len(items)} 个代理")
+                    break  # 成功则退出重试循环
+                else:
+                    print(f"Geonode 第 {page} 页请求失败 (HTTP {response.status_code})，重试 {attempt+1}/{max_retries}")
+            except Exception as e:
+                if attempt == max_retries - 1:
+                    print(f"Geonode 第 {page} 页爬取失败: {e}")
+                else:
+                    print(f"Geonode 第 {page} 页爬取失败，重试 {attempt+1}/{max_retries}: {e}")
+                    time.sleep(2)
 
     return proxies
 
@@ -117,6 +124,63 @@ def fetch_free_proxy_list() -> List[str]:
 
     return proxies
 
+def fetch_proxyscrape_proxies() -> List[str]:
+    """从ProxyScrape获取代理"""
+    proxies = []
+    protocols = ["http", "socks4", "socks5"]
+
+    for protocol in protocols:
+        try:
+            # 直接请求原始URL
+            url = f"https://api.proxyscrape.com/v2/?request=displayproxies&protocol={protocol}&timeout=10000&country=all&ssl=all&anonymity=all"
+            response = requests.get(url, timeout=CONFIG["timeout"])
+            if response.status_code == 200:
+                proxy_list = response.text.strip().split("\r\n")
+                for proxy in proxy_list:
+                    if proxy.strip():
+                        # 调整socks5协议
+                        proxy_protocol = protocol
+                        if protocol == "socks5":
+                            proxy_protocol = "socks5h"
+                        proxies.append(f"{proxy_protocol}://{proxy}")
+                print(f"ProxyScrape {protocol}: 获取 {len(proxy_list)} 个代理")
+        except Exception as e:
+            print(f"ProxyScrape {protocol} 爬取失败: {e}")
+
+    return proxies
+
+
+def fetch_roosterkid_proxies() -> List[str]:
+    """从RoosterKid的GitHub仓库获取代理"""
+    proxies = []
+    sources = [
+        ("https://raw.githubusercontent.com/roosterkid/openproxylist/main/SOCKS4.txt", "socks4"),
+        ("https://raw.githubusercontent.com/roosterkid/openproxylist/main/SOCKS5.txt", "socks5h"),
+        ("https://raw.githubusercontent.com/roosterkid/openproxylist/main/HTTPS.txt", "https"),
+    ]
+
+    for url, protocol in sources:
+        try:
+            response = requests.get(url, timeout=CONFIG["timeout"])
+            if response.status_code == 200:
+                lines = response.text.strip().split("\n")
+                # 跳过标题行（前12行）
+                data_lines = lines[12:] if len(lines) > 12 else lines
+                count = 0
+                for line in data_lines:
+                    line = line.strip()
+                    if line and not line.startswith("#"):
+                        parts = line.split()
+                        if len(parts) >= 2:
+                            proxy = f"{protocol}://{parts[1]}"
+                            proxies.append(proxy)
+                            count += 1
+                print(f"RoosterKid {protocol}: 获取 {count} 个代理")
+        except Exception as e:
+            print(f"RoosterKid {protocol} 爬取失败: {e}")
+
+    return proxies
+
 def crawl_proxies() -> List[str]:
     """爬取所有代理源"""
     print("开始爬取代理...")
@@ -127,6 +191,8 @@ def crawl_proxies() -> List[str]:
     sources = [
         fetch_geonode_proxies,
         fetch_free_proxy_list,
+        fetch_proxyscrape_proxies,
+        fetch_roosterkid_proxies,
     ]
 
     with ThreadPoolExecutor(max_workers=CONFIG["crawler_workers"]) as executor:
