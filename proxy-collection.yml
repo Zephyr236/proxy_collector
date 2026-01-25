@@ -1,0 +1,39 @@
+name: Proxy Collection
+
+on:
+  schedule:
+    - cron: '0 */6 * * *'  # 每6小时运行一次
+  workflow_dispatch:       # 手动触发
+
+jobs:
+  collect-proxies:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write  # 添加写入权限
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v3
+      with:
+        fetch-depth: 0  # 获取完整历史记录
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+
+    - name: Install dependencies
+      run: |
+        pip install -r simple_requirements.txt
+
+    - name: Run proxy collection
+      run: |
+        python simple_proxy_collector.py
+
+    - name: Commit and push updates
+      run: |
+        git config --local user.email "github-actions[bot]@users.noreply.github.com"
+        git config --local user.name "github-actions[bot]"
+        git add data/proxies.json
+        git commit -m "Update proxy list $(date -u +'%Y-%m-%d %H:%M UTC')" || echo "No changes to commit"
+        git push https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git
