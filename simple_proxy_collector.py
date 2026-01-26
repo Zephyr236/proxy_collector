@@ -10,6 +10,7 @@ import json
 import time
 import requests
 import io
+from bs4 import BeautifulSoup
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import List, Tuple, Optional
 from datetime import datetime
@@ -22,7 +23,7 @@ if sys.stderr.encoding is None or sys.stderr.encoding.upper() != 'UTF-8':
 
 # 简单配置
 CONFIG = {
-    "crawler_workers": 10,  # 增加爬虫工作者数量以支持更多源（当前8个源）
+    "crawler_workers": 10,  # 增加爬虫工作者数量以支持更多源（当前7个源）
     "validator_workers": 10,
     "timeout": 30,
     "test_url": "https://httpbin.org/ip",
@@ -238,6 +239,57 @@ def fetch_sockslist_us_proxies() -> List[str]:
 
 
 
+def fetch_zdaye_proxies() -> List[str]:
+    """从zdaye.com获取代理"""
+    proxies = []
+    max_pages = 5  # 爬取最多5页
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.3",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.5",
+        "Accept-Encoding": "gzip, deflate, br",
+        "Referer": "https://www.zdaye.com/",
+        "Connection": "keep-alive",
+        "Upgrade-Insecure-Requests": "1",
+        "Sec-Fetch-Dest": "document",
+        "Sec-Fetch-Mode": "navigate",
+        "Sec-Fetch-Site": "same-origin",
+        "Sec-Fetch-User": "?1",
+        "Cache-Control": "max-age=0"
+    }
+
+    for page in range(1, max_pages + 1):
+        try:
+            url = f"https://www.zdaye.com/free/{page}/"
+            response = requests.get(url, headers=headers, timeout=CONFIG["timeout"])
+            if response.status_code == 200:
+                soup = BeautifulSoup(response.text, "html.parser")
+                table_block_div = soup.find("div", class_="abox ov")
+                if not table_block_div:
+                    print(f"Zdaye 第 {page} 页: 未找到表格")
+                    continue
+
+                page_proxies = []
+                for table in table_block_div.find_all("table"):
+                    for tbody in table.find_all("tbody"):
+                        for tr in tbody.find_all("tr"):
+                            row_data = [td.get_text(strip=True) for td in tr.find_all("td")]
+                            if len(row_data) >= 2:
+                                ip = row_data[0]
+                                port = row_data[1]
+                                # 原爬虫使用 socks5 协议
+                                proxy = f"socks5://{ip}:{port}"
+                                page_proxies.append(proxy)
+                print(f"Zdaye 第 {page} 页: 获取 {len(page_proxies)} 个代理")
+                proxies.extend(page_proxies)
+            else:
+                print(f"Zdaye 第 {page} 页请求失败 (HTTP {response.status_code})")
+        except Exception as e:
+            print(f"Zdaye 第 {page} 页爬取失败: {e}")
+
+    return proxies
+
+
 def crawl_proxies() -> List[str]:
     """爬取所有代理源"""
     print("开始爬取代理...")
@@ -252,6 +304,7 @@ def crawl_proxies() -> List[str]:
         fetch_roosterkid_proxies,
         fetch_proxifly_proxies,
         fetch_sockslist_us_proxies,
+        fetch_zdaye_proxies,
     ]
 
     with ThreadPoolExecutor(max_workers=CONFIG["crawler_workers"]) as executor:
