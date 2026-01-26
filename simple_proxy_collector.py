@@ -22,9 +22,9 @@ if sys.stderr.encoding is None or sys.stderr.encoding.upper() != 'UTF-8':
 
 # 简单配置
 CONFIG = {
-    "crawler_workers": 5,  # 增加爬虫工作者数量以支持更多源
+    "crawler_workers": 10,  # 增加爬虫工作者数量以支持更多源（当前8个源）
     "validator_workers": 10,
-    "timeout": 15,
+    "timeout": 30,
     "test_url": "https://httpbin.org/ip",
     "max_response_time": 5.0,
     "data_dir": "./data",
@@ -181,18 +181,77 @@ def fetch_roosterkid_proxies() -> List[str]:
 
     return proxies
 
+
+def fetch_proxifly_proxies() -> List[str]:
+    """从proxifly/free-proxy-list获取代理"""
+    proxies = []
+    url = "https://cdn.jsdelivr.net/gh/proxifly/free-proxy-list@main/proxies/all/data.txt"
+
+    try:
+        response = requests.get(url, timeout=CONFIG["timeout"])
+        if response.status_code == 200:
+            lines = response.text.strip().split("\n")
+            count = 0
+            for line in lines:
+                line = line.strip()
+                if line:
+                    # 原格式已经是完整代理，如 http://ip:port
+                    # 将socks5替换为socks5h，socks4替换为socks4h
+                    proxy = line
+                    if "socks5://" in proxy:
+                        proxy = proxy.replace("socks5://", "socks5h://")
+                    elif "socks4://" in proxy:
+                        # socks4保持原样，不需要socks4h
+                        pass
+                    proxies.append(proxy)
+                    count += 1
+            print(f"Proxifly Free Proxy List: 获取 {count} 个代理")
+    except Exception as e:
+        print(f"Proxifly Free Proxy List爬取失败: {e}")
+
+    return proxies
+
+
+def fetch_sockslist_us_proxies() -> List[str]:
+    """从sockslist.us获取代理"""
+    proxies = []
+    url = "https://sockslist.us/Raw"
+
+    try:
+        response = requests.get(url, timeout=CONFIG["timeout"])
+        if response.status_code == 200:
+            lines = response.text.strip().split("\n")
+            count = 0
+            for line in lines:
+                line = line.strip()
+                if line and ":" in line:
+                    # 添加两种协议
+                    proxies.append(f"socks5://{line}")
+                    proxies.append(f"socks5h://{line}")
+                    count += 2
+            print(f"SocksList US: 获取 {count} 个代理")
+    except Exception as e:
+        print(f"SocksList US爬取失败: {e}")
+
+    return proxies
+
+
+
+
 def crawl_proxies() -> List[str]:
     """爬取所有代理源"""
     print("开始爬取代理...")
 
     all_proxies = []
 
-    # 从多个源爬取
+    # 从多个源爬取（已移除失效源：proxy-list.download, proxydb.net）
     sources = [
         fetch_geonode_proxies,
         fetch_free_proxy_list,
         fetch_proxyscrape_proxies,
         fetch_roosterkid_proxies,
+        fetch_proxifly_proxies,
+        fetch_sockslist_us_proxies,
     ]
 
     with ThreadPoolExecutor(max_workers=CONFIG["crawler_workers"]) as executor:
