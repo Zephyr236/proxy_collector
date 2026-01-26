@@ -290,6 +290,92 @@ def fetch_zdaye_proxies() -> List[str]:
     return proxies
 
 
+def fetch_spys_one_proxies() -> List[str]:
+    """从spys.one获取代理"""
+    import urllib3
+    import re
+    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+    proxies = []
+    countries = ["FR", "US", "RU", "HK", "JP", "BR", "SG", "ID", "FI", "TH", "CO", "MX"]
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.3"
+    }
+
+    # IP地址正则表达式
+    ip_pattern = re.compile(r'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}')
+
+    for country in countries:
+        try:
+            # 直接请求目标网站（禁用SSL验证以避免SSL错误）
+            url = f"https://spys.one/free-proxy-list/{country}"
+            response = requests.get(url, headers=headers, timeout=CONFIG["timeout"], verify=False)
+            if response.status_code == 200:
+                html = response.text
+                soup = BeautifulSoup(html, "html.parser")
+                tr_list = soup.find_all("tr", class_=["spy1xx", "spy1x"])
+                country_proxies = 0
+                for tr in tr_list:
+                    data_text = str(tr.text).lower()
+
+                    # 参考原ProxyHive代码的逻辑
+                    if "https" in data_text:
+                        ip = data_text.split("https")[0].strip()
+                        # 验证IP地址格式
+                        if ip and ip_pattern.match(ip):
+                            # 检查是否有端口（包含冒号）
+                            if ":" not in ip:
+                                # 无端口，使用默认HTTPS端口443
+                                ip = f"{ip}:443"
+                            proxy = f"https://{ip}"
+                            proxies.append(proxy)
+                            country_proxies += 1
+                        continue
+
+                    if "http" in data_text:
+                        ip = data_text.split("http")[0].strip()
+                        # 验证IP地址格式
+                        if ip and ip_pattern.match(ip):
+                            if ":" not in ip:
+                                # 无端口，使用默认HTTP端口80
+                                ip = f"{ip}:80"
+                            proxy = f"http://{ip}"
+                            proxies.append(proxy)
+                            country_proxies += 1
+                        continue
+
+                    if "socks5" in data_text:
+                        ip = data_text.split("socks5")[0].strip()
+                        # 验证IP地址格式
+                        if ip and ip_pattern.match(ip):
+                            if ":" not in ip:
+                                # 无端口，使用默认SOCKS5端口1080
+                                ip = f"{ip}:1080"
+                            proxy = f"socks5h://{ip}"
+                            proxies.append(proxy)
+                            country_proxies += 1
+                        continue
+
+                    if "socks4" in data_text:
+                        ip = data_text.split("socks4")[0].strip()
+                        # 验证IP地址格式
+                        if ip and ip_pattern.match(ip):
+                            if ":" not in ip:
+                                # 无端口，使用默认SOCKS4端口1080
+                                ip = f"{ip}:1080"
+                            proxy = f"socks4://{ip}"
+                            proxies.append(proxy)
+                            country_proxies += 1
+                        continue
+
+                print(f"Spys.one {country}: 获取 {country_proxies} 个代理（共 {len(tr_list)} 行）")
+        except Exception as e:
+            print(f"Spys.one {country} 爬取失败: {e}")
+
+    print(f"Spys.one 总计: 获取 {len(proxies)} 个代理")
+    return proxies
+
+
 def crawl_proxies() -> List[str]:
     """爬取所有代理源"""
     print("开始爬取代理...")
@@ -305,6 +391,7 @@ def crawl_proxies() -> List[str]:
         fetch_proxifly_proxies,
         fetch_sockslist_us_proxies,
         fetch_zdaye_proxies,
+        fetch_spys_one_proxies,
     ]
 
     with ThreadPoolExecutor(max_workers=CONFIG["crawler_workers"]) as executor:
