@@ -2,3 +2,5 @@ requests==2.32.3
 beautifulsoup4==4.12.3
 js2py
 cloudscraper
+aiohttp==3.9.5
+aiohttp_socks==0.9.0
