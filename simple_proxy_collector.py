@@ -8,10 +8,13 @@ import sys
 import os
 import json
 import time
+import asyncio
 import requests
 import io
 import re
 import js2py
+import aiohttp
+from aiohttp_socks import ProxyConnector, ProxyType
 from bs4 import BeautifulSoup
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import List, Tuple, Optional
@@ -27,6 +30,8 @@ if sys.stderr.encoding is None or sys.stderr.encoding.upper() != 'UTF-8':
 CONFIG = {
     "crawler_workers": 20,  # 增加爬虫工作者数量以支持更多源（现有20个源）
     "validator_workers": 10,
+    "async_validator_concurrency": 100,  # 异步验证并发数
+    "validation_method": "async",  # 验证方法：async（异步）或sync（同步，线程池）
     "timeout": 30,
     "test_url": "https://httpbin.org/ip",
     "max_response_time": 5.0,
@@ -1479,35 +1484,153 @@ def test_proxy(proxy: str) -> Tuple[bool, Optional[float]]:
     except Exception:
         return False, None
 
-def validate_proxies(proxies: List[str]) -> List[str]:
-    """验证代理可用性"""
-    print(f"开始验证 {len(proxies)} 个代理...")
+async def test_proxy_async(proxy: str, semaphore: asyncio.Semaphore) -> Tuple[bool, Optional[float]]:
+    """异步测试单个代理是否可用"""
+    async with semaphore:
+        try:
+            start_time = time.time()
+
+            # 设置超时
+            timeout = aiohttp.ClientTimeout(total=CONFIG["timeout"])
+
+            # 根据代理协议类型选择不同的连接方式
+            if proxy.startswith('socks5://') or proxy.startswith('socks4://'):
+                # SOCKS代理，使用aiohttp_socks
+                try:
+                    connector = ProxyConnector.from_url(proxy)
+                    async with aiohttp.ClientSession(connector=connector, timeout=timeout) as session:
+                        async with session.get(CONFIG["test_url"]) as response:
+                            end_time = time.time()
+                            response_time = end_time - start_time
+
+                            if response.status == 200:
+                                # 检查返回的IP是否与代理IP匹配
+                                try:
+                                    data = await response.json()
+                                    if "origin" in data:
+                                        return True, response_time
+                                except:
+                                    # 即使不是JSON格式，只要返回200也认为是成功的
+                                    return True, response_time
+
+                            return False, response_time
+                except asyncio.TimeoutError:
+                    return False, None
+                except Exception:
+                    return False, None
+            else:
+                # HTTP/HTTPS代理，使用aiohttp内置代理支持
+                # 确保代理URL有协议头
+                if not proxy.startswith('http://') and not proxy.startswith('https://'):
+                    proxy_url = f"http://{proxy}"
+                else:
+                    proxy_url = proxy
+
+                try:
+                    async with aiohttp.ClientSession(timeout=timeout) as session:
+                        async with session.get(CONFIG["test_url"], proxy=proxy_url) as response:
+                            end_time = time.time()
+                            response_time = end_time - start_time
+
+                            if response.status == 200:
+                                # 检查返回的IP是否与代理IP匹配
+                                try:
+                                    data = await response.json()
+                                    if "origin" in data:
+                                        return True, response_time
+                                except:
+                                    # 即使不是JSON格式，只要返回200也认为是成功的
+                                    return True, response_time
+
+                            return False, response_time
+                except asyncio.TimeoutError:
+                    return False, None
+                except Exception:
+                    return False, None
+
+        except Exception:
+            return False, None
+
+async def validate_proxies_async(proxies: List[str]) -> List[str]:
+    """异步验证代理可用性"""
+    print(f"开始异步验证 {len(proxies)} 个代理...")
 
     valid_proxies = []
     total = len(proxies)
 
-    with ThreadPoolExecutor(max_workers=CONFIG["validator_workers"]) as executor:
-        futures = {executor.submit(test_proxy, proxy): proxy for proxy in proxies}
+    # 创建信号量限制并发数
+    semaphore = asyncio.Semaphore(CONFIG["async_validator_concurrency"])
 
-        completed = 0
-        for future in as_completed(futures):
-            completed += 1
-            proxy = futures[future]
+    # 创建任务字典，将任务与代理关联
+    tasks = {}
+    for proxy in proxies:
+        # 为每个代理创建测试任务
+        task = asyncio.create_task(test_proxy_async(proxy, semaphore))
+        tasks[task] = proxy
 
-            try:
-                is_valid, response_time = future.result()
-                if is_valid and response_time and response_time <= CONFIG["max_response_time"]:
-                    valid_proxies.append(proxy)
+    completed = 0
+    # 使用as_completed并发处理完成的任务
+    for future in asyncio.as_completed(tasks.keys()):
+        proxy = tasks[future]
+        try:
+            is_valid, response_time = await future
+            if is_valid and response_time and response_time <= CONFIG["max_response_time"]:
+                valid_proxies.append(proxy)
+        except Exception:
+            pass
 
-                # 每50个代理显示一次进度
-                if completed % 50 == 0 or completed == total:
-                    print(f"进度: {completed}/{total}，有效: {len(valid_proxies)}")
+        completed += 1
+        # 每50个代理显示一次进度
+        if completed % 50 == 0 or completed == total:
+            print(f"进度: {completed}/{total}，有效: {len(valid_proxies)}")
 
-            except Exception as e:
-                pass
-
-    print(f"验证完成，有效代理: {len(valid_proxies)}/{total}")
+    print(f"异步验证完成，有效代理: {len(valid_proxies)}/{total}")
     return valid_proxies
+
+def validate_proxies(proxies: List[str]) -> List[str]:
+    """验证代理可用性，根据配置选择异步或同步验证"""
+    if CONFIG["validation_method"] == "async":
+        # 尝试使用异步验证
+        try:
+            return asyncio.run(validate_proxies_async(proxies))
+        except ImportError as e:
+            print(f"[警告] 异步验证依赖未安装，回退到同步验证: {e}")
+            print("请运行: pip install -r simple_requirements.txt")
+            # 回退到同步验证
+            CONFIG["validation_method"] = "sync"
+        except Exception as e:
+            print(f"[警告] 异步验证失败，回退到同步验证: {e}")
+            CONFIG["validation_method"] = "sync"
+
+    if CONFIG["validation_method"] == "sync":
+        # 使用同步线程池验证（向后兼容）
+        print(f"开始同步验证 {len(proxies)} 个代理...")
+
+        valid_proxies = []
+        total = len(proxies)
+
+        with ThreadPoolExecutor(max_workers=CONFIG["validator_workers"]) as executor:
+            futures = {executor.submit(test_proxy, proxy): proxy for proxy in proxies}
+
+            completed = 0
+            for future in as_completed(futures):
+                completed += 1
+                proxy = futures[future]
+
+                try:
+                    is_valid, response_time = future.result()
+                    if is_valid and response_time and response_time <= CONFIG["max_response_time"]:
+                        valid_proxies.append(proxy)
+
+                    # 每50个代理显示一次进度
+                    if completed % 50 == 0 or completed == total:
+                        print(f"进度: {completed}/{total}，有效: {len(valid_proxies)}")
+
+                except Exception as e:
+                    pass
+
+        print(f"同步验证完成，有效代理: {len(valid_proxies)}/{total}")
+        return valid_proxies
 
 def merge_proxies(new_proxies: List[str], existing_proxies: List[str]) -> List[str]:
     """合并新旧代理"""
