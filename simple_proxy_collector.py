@@ -13,11 +13,9 @@ import requests
 import io
 import re
 import js2py
-import aiohttp
-from aiohttp_socks import ProxyConnector, ProxyType
 from bs4 import BeautifulSoup
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import List, Tuple, Optional
+from typing import List, Tuple, Optional, Any
 from datetime import datetime
 
 # 设置标准输出编码为UTF-8
@@ -30,9 +28,9 @@ if sys.stderr.encoding is None or sys.stderr.encoding.upper() != 'UTF-8':
 CONFIG = {
     "crawler_workers": 20,  # 增加爬虫工作者数量以支持更多源（现有20个源）
     "validator_workers": 10,
-    "async_validator_concurrency": 100,  # 异步验证并发数
+    "async_validator_concurrency": 50,  # 异步验证并发数（根据网络情况调整）
     "validation_method": "async",  # 验证方法：async（异步）或sync（同步，线程池）
-    "timeout": 30,
+    "timeout": 5,  # 单个代理测试超时时间（秒）
     "test_url": "https://httpbin.org/ip",
     "max_response_time": 5.0,
     "data_dir": "./data",
@@ -1486,6 +1484,14 @@ def test_proxy(proxy: str) -> Tuple[bool, Optional[float]]:
 
 async def test_proxy_async(proxy: str, semaphore: asyncio.Semaphore) -> Tuple[bool, Optional[float]]:
     """异步测试单个代理是否可用"""
+    # 动态导入异步依赖
+    try:
+        import aiohttp
+        from aiohttp_socks import ProxyConnector
+    except ImportError:
+        # 如果异步依赖未安装，抛出异常让外层处理
+        raise ImportError("aiohttp 或 aiohttp_socks 未安装，请运行: pip install -r simple_requirements.txt")
+
     async with semaphore:
         try:
             start_time = time.time()
@@ -1552,37 +1558,108 @@ async def test_proxy_async(proxy: str, semaphore: asyncio.Semaphore) -> Tuple[bo
             return False, None
 
 async def validate_proxies_async(proxies: List[str]) -> List[str]:
-    """异步验证代理可用性"""
+    """异步验证代理可用性 - 使用任务队列控制并发"""
     print(f"开始异步验证 {len(proxies)} 个代理...")
 
     valid_proxies = []
     total = len(proxies)
 
+    if total == 0:
+        return []
+
     # 创建信号量限制并发数
     semaphore = asyncio.Semaphore(CONFIG["async_validator_concurrency"])
 
-    # 创建任务字典，将任务与代理关联
-    tasks = {}
-    for proxy in proxies:
-        # 为每个代理创建测试任务
+    # 使用集合来跟踪运行中的任务
+    pending_tasks = {}
+    completed_count = 0
+    next_proxy_index = 0
+
+    # 初始填充任务，不超过并发限制
+    while next_proxy_index < total and len(pending_tasks) < CONFIG["async_validator_concurrency"]:
+        proxy = proxies[next_proxy_index]
         task = asyncio.create_task(test_proxy_async(proxy, semaphore))
-        tasks[task] = proxy
+        pending_tasks[task] = proxy
+        next_proxy_index += 1
 
-    completed = 0
-    # 使用as_completed并发处理完成的任务
-    for future in asyncio.as_completed(tasks.keys()):
-        proxy = tasks[future]
-        try:
-            is_valid, response_time = await future
-            if is_valid and response_time and response_time <= CONFIG["max_response_time"]:
-                valid_proxies.append(proxy)
-        except Exception:
-            pass
+    try:
+        while pending_tasks:
+            # 等待至少一个任务完成
+            done, pending = await asyncio.wait(
+                set(pending_tasks.keys()),  # 转换为集合
+                return_when=asyncio.FIRST_COMPLETED,
+                timeout=CONFIG["timeout"] * 2  # 超时时间稍长一些
+            )
 
-        completed += 1
-        # 每50个代理显示一次进度
-        if completed % 50 == 0 or completed == total:
-            print(f"进度: {completed}/{total}，有效: {len(valid_proxies)}")
+            # 处理超时情况（没有任务完成）
+            if not done:
+                # 检查是否有任务卡住，取消所有任务并重新开始
+                print(f"[警告] 等待任务完成超时，取消 {len(pending_tasks)} 个任务")
+                # 将取消的任务计入完成数量
+                cancelled_tasks = list(pending_tasks.keys())
+                for task in cancelled_tasks:
+                    task.cancel()
+                # 等待取消完成
+                await asyncio.gather(*cancelled_tasks, return_exceptions=True)
+                # 更新完成计数
+                completed_count += len(cancelled_tasks)
+                # 清空pending_tasks，重新开始
+                pending_tasks.clear()
+                # 重新添加任务，从当前索引开始
+                while next_proxy_index < total and len(pending_tasks) < CONFIG["async_validator_concurrency"]:
+                    proxy = proxies[next_proxy_index]
+                    task = asyncio.create_task(test_proxy_async(proxy, semaphore))
+                    pending_tasks[task] = proxy
+                    next_proxy_index += 1
+                continue
+
+            # 处理完成的任务
+            for task in done:
+                proxy = pending_tasks.pop(task, None)
+                if proxy is None:
+                    # 任务可能已经被移除了
+                    continue
+
+                try:
+                    is_valid, response_time = task.result()
+                    if is_valid and response_time and response_time <= CONFIG["max_response_time"]:
+                        valid_proxies.append(proxy)
+                except asyncio.CancelledError:
+                    # 任务被取消，忽略
+                    pass
+                except Exception:
+                    # 单个代理验证失败，忽略
+                    pass
+
+                completed_count += 1
+
+                # 根据总数动态调整进度显示频率
+                if total > 10000:
+                    update_interval = 500  # 大量代理时每500个更新一次
+                elif total > 1000:
+                    update_interval = 100   # 中等数量代理每100个更新一次
+                else:
+                    update_interval = 50    # 少量代理每50个更新一次
+
+                if completed_count % update_interval == 0 or completed_count == total:
+                    percent = (completed_count / total) * 100
+                    print(f"进度: {completed_count}/{total} ({percent:.1f}%)，有效: {len(valid_proxies)}")
+
+            # 添加新任务以保持并发数
+            while next_proxy_index < total and len(pending_tasks) < CONFIG["async_validator_concurrency"]:
+                proxy = proxies[next_proxy_index]
+                task = asyncio.create_task(test_proxy_async(proxy, semaphore))
+                pending_tasks[task] = proxy
+                next_proxy_index += 1
+
+    except Exception as e:
+        print(f"[警告] 异步验证异常: {e}")
+        # 取消所有剩余任务
+        for task in pending_tasks:
+            task.cancel()
+        # 等待所有任务被取消
+        await asyncio.gather(*pending_tasks.keys(), return_exceptions=True)
+        raise
 
     print(f"异步验证完成，有效代理: {len(valid_proxies)}/{total}")
     return valid_proxies
@@ -1622,9 +1699,17 @@ def validate_proxies(proxies: List[str]) -> List[str]:
                     if is_valid and response_time and response_time <= CONFIG["max_response_time"]:
                         valid_proxies.append(proxy)
 
-                    # 每50个代理显示一次进度
-                    if completed % 50 == 0 or completed == total:
-                        print(f"进度: {completed}/{total}，有效: {len(valid_proxies)}")
+                    # 根据总数动态调整进度显示频率
+                    if total > 10000:
+                        update_interval = 500  # 大量代理时每500个更新一次
+                    elif total > 1000:
+                        update_interval = 100   # 中等数量代理每100个更新一次
+                    else:
+                        update_interval = 50    # 少量代理每50个更新一次
+
+                    if completed % update_interval == 0 or completed == total:
+                        percent = (completed / total) * 100
+                        print(f"进度: {completed}/{total} ({percent:.1f}%)，有效: {len(valid_proxies)}")
 
                 except Exception as e:
                     pass
