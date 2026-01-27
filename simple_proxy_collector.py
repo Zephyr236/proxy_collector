@@ -10,6 +10,8 @@ import json
 import time
 import requests
 import io
+import re
+import js2py
 from bs4 import BeautifulSoup
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import List, Tuple, Optional
@@ -23,7 +25,7 @@ if sys.stderr.encoding is None or sys.stderr.encoding.upper() != 'UTF-8':
 
 # 简单配置
 CONFIG = {
-    "crawler_workers": 10,  # 增加爬虫工作者数量以支持更多源（当前7个源）
+    "crawler_workers": 20,  # 增加爬虫工作者数量以支持更多源（现有20个源）
     "validator_workers": 10,
     "timeout": 30,
     "test_url": "https://httpbin.org/ip",
@@ -291,88 +293,1109 @@ def fetch_zdaye_proxies() -> List[str]:
 
 
 def fetch_spys_one_proxies() -> List[str]:
-    """从spys.one获取代理"""
-    import urllib3
-    import re
-    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-
-    proxies = []
-    countries = ["FR", "US", "RU", "HK", "JP", "BR", "SG", "ID", "FI", "TH", "CO", "MX"]
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.3"
+    """从spys.one获取代理（使用JavaScript端口解码）"""
+    # 使用spys_one项目中的cookies和headers（可能需要更新）
+    cookies = {
+        '_ga_XWX5S73YKH': 'GS2.1.s1769449589$o3$g1$t1769450226$j33$l0$h0',
+        '_ga': 'GA1.1.1359544579.1769440694',
+        'cf_clearance': 'VsncOXiIsWN2re2BgDUY_V3kWdwqP9kZO5pwK8R3o0Q-1769449587-1.2.1.1-ok1wH6F5lcq85aAlesC3P5z3RWR9zvkcjg4O_doBrzJZJjlk4OHfCcpvXcBlGdGzdzi63k1mGcABjj.mF2RDscx3ORO1UjA2AYTco8TcCjl7s7mYmGhfkdSv0pe1_va0CMiXuq6pQBoItfhnA.gn7exHakx4021moiKOMyDezsBfvt4u4HR_qbEXQxKgGqF65.wGb3W69w8nX4MH8QcODEEHNxkdiKTXe6iQ8iJuwWk',
+        '__gads': 'ID=046e27d2b5f6af88:T=1769440694:RT=1769450197:S=ALNI_MbR6GNw7GvproRaDuOdzfNHphYHIA',
+        '__gpi': 'UID=000011eb94f50545:T=1769440694:RT=1769450197:S=ALNI_Ma--28Sf8jk0c0dOggdMXrMnO-tlw',
+        '__eoi': 'ID=d96e54866ede7675:T=1769440694:RT=1769450197:S=AA-AfjZLdPr_vYiyIxCRZowx7irr',
+        'FCCDCF': '%5Bnull%2Cnull%2Cnull%2Cnull%2Cnull%2Cnull%2C%5B%5B32%2C%22%5B%5C%22481bf5c4-4d9b-42c8-a095-0ad81d454715%5C%22%2C%5B1769440698%2C131000000%5D%5D%22%5D%5D%5D',
+        'FCNEC': '%5B%5B%22AKsRol8sf4vDs3kowdjuAukPey5BgPaWovJ9B2lgRkDBDnmSV1kJw4xidx0F1-q_2wDrmMm7-1GzKU4b_Le2d5qsqNYmOItuWak_FfpkA9QWLNW6qyblvCU8bU4RWg-fGHS-8al_NWFwvSr3DMWt5SouOz0Oi_PIGw%3D%3D%22%5D%5D',
     }
 
-    # IP地址正则表达式
-    ip_pattern = re.compile(r'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}')
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:147.0) Gecko/20100101 Firefox/147.0',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'zh-CN,zh;q=0.9,zh-TW;q=0.8,zh-HK;q=0.7,en-US;q=0.6,en;q=0.5',
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Origin': 'https://spys.one',
+        'Connection': 'keep-alive',
+        'Referer': 'https://spys.one/free-proxy-list/FR/',
+        'Upgrade-Insecure-Requests': '1',
+        'Sec-Fetch-Dest': 'document',
+        'Sec-Fetch-Mode': 'navigate',
+        'Sec-Fetch-Site': 'same-origin',
+        'Sec-Fetch-User': '?1',
+        'Priority': 'u=0, i',
+    }
 
-    for country in countries:
+    # POST数据以获取500条代理
+    data = {
+        'xx00': '',
+        'xpp': '5',
+        'xf1': '0',
+        'xf2': '0',
+        'xf4': '0',
+        'xf5': '0',
+    }
+
+    countries = ["FR", "US", "RU", "HK", "JP", "BR", "SG", "ID", "FI", "TH", "CO", "MX"]
+
+    class SpysOneCrawler:
+        def __init__(self, cookies, headers, timeout):
+            self.cookies = cookies
+            self.headers = headers
+            self.timeout = timeout
+            self.vars_dict = None
+
+        def fetch(self, url, data=None):
+            """Fetch page content, use POST if data provided"""
+            if data:
+                resp = requests.post(url, cookies=self.cookies, headers=self.headers, data=data, timeout=self.timeout)
+            else:
+                resp = requests.get(url, cookies=self.cookies, headers=self.headers, timeout=self.timeout)
+            resp.raise_for_status()
+            return resp.text
+
+        def decode_port_variables(self, html):
+            """Extract and decode JavaScript variables for port obfuscation"""
+            # Find eval code
+            pattern = r'eval\(function\(p,r,o,x,y,s\)\{.*?\}\(.*?\)\)'
+            match = re.search(pattern, html, re.DOTALL)
+            if not match:
+                raise ValueError("Could not find eval code")
+
+            eval_code = match.group(0)
+
+            # Extract function and arguments
+            func_match = re.search(r"eval\(function\((.*?)\)\{(.*?)\}\((.*?)\)\)", eval_code, re.DOTALL)
+            if not func_match:
+                raise ValueError("Could not parse eval function")
+
+            params, body, args = func_match.groups()
+
+            # Use js2py to unpack
+            context = js2py.EvalJs()
+            js_code = f"var unpack = function({params}) {{{body}}}; var result = unpack({args}); result;"
+            unpacked = context.eval(js_code)
+
+            # Execute unpacked code to set variables
+            context.execute(unpacked)
+
+            # Collect known variables
+            vars_dict = {}
+            # Parse assignments from unpacked code
+            lines = unpacked.split(';')
+            for line in lines:
+                line = line.strip()
+                if '=' in line:
+                    var, expr = line.split('=', 1)
+                    var = var.strip()
+                    try:
+                        # Evaluate expression in context
+                        vars_dict[var] = context.eval(expr)
+                    except:
+                        pass
+
+            # Also get common variables directly
+            common_vars = [
+                'Two', 'Six', 'Four', 'Zero', 'Five', 'Nine', 'Three', 'Seven', 'Eight', 'One',
+                'SevenZeroFour', 'EightOneThree', 'Six9Six', 'NineEightNine', 'FiveOneZero',
+                'Four9One', 'ZeroTwoFive', 'Five6Seven', 'Nine5Two', 'Zero4Eight',
+                'Four4OneSeven', 'Eight5SevenNine', 'TwoSevenNineSix', 'Five2TwoZero',
+                'SixFiveThreeFive', 'OneFourEightTwo', 'Eight4FourThree', 'SevenTwoFiveOne',
+                'EightFourSixFour', 'OneOneZeroEight'
+            ]
+            for var in common_vars:
+                try:
+                    vars_dict[var] = context[var]
+                except:
+                    pass
+
+            self.vars_dict = vars_dict
+            return vars_dict
+
+        def evaluate_port_expression(self, expr):
+            """Evaluate port expression like (EightFourSixFour^Six9Six)+(Four4OneSeven^Five6Seven)"""
+            if not self.vars_dict:
+                raise ValueError("Variables not decoded")
+
+            # Find all XOR terms
+            terms = re.findall(r'\(([^)]+)\)', expr)
+            port_parts = []
+            for term in terms:
+                if '^' in term:
+                    var1, var2 = term.split('^')
+                    var1 = var1.strip()
+                    var2 = var2.strip()
+                    val1 = self.vars_dict.get(var1)
+                    val2 = self.vars_dict.get(var2)
+                    if val1 is None or val2 is None:
+                        raise ValueError(f"Unknown variable: {var1} or {var2}")
+                    port_parts.append(str(val1 ^ val2))
+                else:
+                    # Might be a direct number? Not likely
+                    pass
+
+            return ''.join(port_parts)
+
+        def parse_proxies(self, html):
+            """Parse proxy list from HTML"""
+            soup = BeautifulSoup(html, 'html.parser')
+            proxies = []
+
+            # Find all table rows
+            for row in soup.find_all('tr'):
+                # Look for IP address in spy14 font
+                ip_font = row.find('font', class_='spy14')
+                if not ip_font:
+                    continue
+
+                # Check if there's a port script
+                script = ip_font.find('script')
+                if not script or not script.string:
+                    continue
+
+                # Extract IP (text before script)
+                ip_text = ip_font.get_text(strip=True)
+                # Remove script part
+                ip = ip_text.split('<')[0] if '<' in ip_text else ip_text
+
+                # Validate IP format
+                if not re.match(r'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}', ip):
+                    continue
+
+                # Extract port expression
+                script_text = script.string
+                match = re.search(r'document\.write\(":"\s*\+\s*(.*)\)', script_text)
+                if not match:
+                    continue
+
+                expr = match.group(1)
+                try:
+                    port = self.evaluate_port_expression(expr)
+                except Exception as e:
+                    print(f"Error evaluating port for {ip}: {e}")
+                    continue
+
+                # Extract proxy type (second column)
+                cols = row.find_all('td')
+                if len(cols) < 2:
+                    continue
+
+                proxy_type = cols[1].get_text(strip=True)
+                # Filter out non-proxy rows (like headers)
+                if not proxy_type or 'HTTP' not in proxy_type and 'SOCKS' not in proxy_type:
+                    continue
+
+                # Determine protocol string
+                proxy_type_lower = proxy_type.lower()
+                if 'socks5' in proxy_type_lower:
+                    protocol = 'socks5h'
+                elif 'socks4' in proxy_type_lower:
+                    protocol = 'socks4'
+                elif 'https' in proxy_type_lower:
+                    protocol = 'https'
+                else:
+                    protocol = 'http'
+
+                proxies.append(f"{protocol}://{ip}:{port}")
+
+            return proxies
+
+        def crawl(self, url, data=None):
+            """Main crawl function"""
+            html = self.fetch(url, data=data)
+            self.decode_port_variables(html)
+            proxies = self.parse_proxies(html)
+            return proxies
+
+    # 主爬取逻辑
+    all_proxies = []
+    total_countries = len(countries)
+
+    for i, country in enumerate(countries):
+        # 更新Referer头为当前国家
+        country_headers = headers.copy()
+        country_headers['Referer'] = f'https://spys.one/free-proxy-list/{country}/'
+
+        crawler = SpysOneCrawler(cookies, country_headers, CONFIG["timeout"])
+        url = f'https://spys.one/free-proxy-list/{country}/'
         try:
-            # 直接请求目标网站（禁用SSL验证以避免SSL错误）
-            url = f"https://spys.one/free-proxy-list/{country}"
-            response = requests.get(url, headers=headers, timeout=CONFIG["timeout"], verify=False)
-            if response.status_code == 200:
-                html = response.text
-                soup = BeautifulSoup(html, "html.parser")
-                tr_list = soup.find_all("tr", class_=["spy1xx", "spy1x"])
-                country_proxies = 0
-                for tr in tr_list:
-                    data_text = str(tr.text).lower()
-
-                    # 参考原ProxyHive代码的逻辑
-                    if "https" in data_text:
-                        ip = data_text.split("https")[0].strip()
-                        # 验证IP地址格式
-                        if ip and ip_pattern.match(ip):
-                            # 检查是否有端口（包含冒号）
-                            if ":" not in ip:
-                                # 无端口，使用默认HTTPS端口443
-                                ip = f"{ip}:443"
-                            proxy = f"https://{ip}"
-                            proxies.append(proxy)
-                            country_proxies += 1
-                        continue
-
-                    if "http" in data_text:
-                        ip = data_text.split("http")[0].strip()
-                        # 验证IP地址格式
-                        if ip and ip_pattern.match(ip):
-                            if ":" not in ip:
-                                # 无端口，使用默认HTTP端口80
-                                ip = f"{ip}:80"
-                            proxy = f"http://{ip}"
-                            proxies.append(proxy)
-                            country_proxies += 1
-                        continue
-
-                    if "socks5" in data_text:
-                        ip = data_text.split("socks5")[0].strip()
-                        # 验证IP地址格式
-                        if ip and ip_pattern.match(ip):
-                            if ":" not in ip:
-                                # 无端口，使用默认SOCKS5端口1080
-                                ip = f"{ip}:1080"
-                            proxy = f"socks5h://{ip}"
-                            proxies.append(proxy)
-                            country_proxies += 1
-                        continue
-
-                    if "socks4" in data_text:
-                        ip = data_text.split("socks4")[0].strip()
-                        # 验证IP地址格式
-                        if ip and ip_pattern.match(ip):
-                            if ":" not in ip:
-                                # 无端口，使用默认SOCKS4端口1080
-                                ip = f"{ip}:1080"
-                            proxy = f"socks4://{ip}"
-                            proxies.append(proxy)
-                            country_proxies += 1
-                        continue
-
-                print(f"Spys.one {country}: 获取 {country_proxies} 个代理（共 {len(tr_list)} 行）")
+            proxies = crawler.crawl(url, data=data)
+            all_proxies.extend(proxies)
+            print(f"Spys.one {country}: 获取 {len(proxies)} 个代理 ({i+1}/{total_countries})")
         except Exception as e:
             print(f"Spys.one {country} 爬取失败: {e}")
+            # 继续下一个国家
 
-    print(f"Spys.one 总计: 获取 {len(proxies)} 个代理")
+    print(f"Spys.one 总计: 获取 {len(all_proxies)} 个代理")
+    return all_proxies
+
+
+def fetch_89ip_proxies() -> List[str]:
+    """从89ip.cn获取代理"""
+    proxies = []
+    cookies = {
+        'Hm_lvt_f9e56acddd5155c92b9b5499ff966848': '1769405985,1769487873',
+        'https_waf_cookie': '449ae721-b8f7-4e2788eb780605cb75da84a6951d6640f8bc',
+        'https_ydclearance': '9b7a0e30e98f253344b7cf2b-fd74-4005-892b-29dde2ea19da-1769495037',
+        'Hm_lpvt_f9e56acddd5155c92b9b5499ff966848': '1769488390',
+        'HMACCOUNT': 'E3C0C109BF9809D8',
+    }
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:147.0) Gecko/20100101 Firefox/147.0',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'zh-CN,zh;q=0.9,zh-TW;q=0.8,zh-HK;q=0.7,en-US;q=0.6,en;q=0.5',
+        'Connection': 'keep-alive',
+        'Referer': 'https://www.89ip.cn/',
+        'Upgrade-Insecure-Requests': '1',
+        'Sec-Fetch-Dest': 'document',
+        'Sec-Fetch-Mode': 'navigate',
+        'Sec-Fetch-Site': 'same-origin',
+        'Sec-Fetch-User': '?1',
+        'Priority': 'u=0, i',
+    }
+
+    max_pages = 6  # 爬取1-6页
+    for page in range(1, max_pages + 1):
+        url = f'https://www.89ip.cn/index_{page}.html'
+        try:
+            response = requests.get(url, cookies=cookies, headers=headers, timeout=CONFIG["timeout"])
+            if response.status_code == 200:
+                response.encoding = 'utf-8'
+                soup = BeautifulSoup(response.text, 'html.parser')
+                table = soup.find('table', class_='layui-table')
+                if not table:
+                    table = soup.find('table')
+                if not table:
+                    continue
+                rows = table.find_all('tr')
+                page_proxies = []
+                for row in rows:
+                    cols = row.find_all('td')
+                    if len(cols) >= 2:
+                        ip = cols[0].get_text(strip=True)
+                        port = cols[1].get_text(strip=True)
+                        protocol = 'http'  # default
+                        if len(cols) >= 3:
+                            protocol_cell = cols[2].get_text(strip=True).lower()
+                            if 'https' in protocol_cell:
+                                protocol = 'https'
+                            elif 'socks' in protocol_cell:
+                                protocol = 'socks'
+                        page_proxies.append(f"{protocol}://{ip}:{port}")
+                proxies.extend(page_proxies)
+                print(f"89ip 第 {page} 页: 获取 {len(page_proxies)} 个代理")
+            else:
+                print(f"89ip 第 {page} 页请求失败 (HTTP {response.status_code})")
+        except Exception as e:
+            print(f"89ip 第 {page} 页爬取失败: {e}")
+
+    return proxies
+
+
+def fetch_ip3366_proxies() -> List[str]:
+    """从ip3366.net获取代理"""
+    proxies = []
+    cookies = {
+        'Hm_lvt_c4dd741ab3585e047d56cf99ebbbe102': '1769405987,1769487848',
+        'http_waf_cookie': '21538523-28f4-4006bb5e3a9d94958ed9f778498d59aa0412',
+        'http_ydclearance': '139da8ff4b683447299ea746-791e-4686-9d03-90df3e211f08-1769495024',
+        'Hm_lpvt_c4dd741ab3585e047d56cf99ebbbe102': '1769487972',
+        'HMACCOUNT': 'EC176DE1D1C15F09',
+    }
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:147.0) Gecko/20100101 Firefox/147.0',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'zh-CN,zh;q=0.9,zh-TW;q=0.8,zh-HK;q=0.7,en-US;q=0.6,en;q=0.5',
+        'Connection': 'keep-alive',
+        'Upgrade-Insecure-Requests': '1',
+        'Priority': 'u=0, i',
+    }
+
+    max_pages = 7  # 1-7页
+    for page in range(1, max_pages + 1):
+        params = {
+            'stype': '1',
+            'page': str(page),
+        }
+        try:
+            response = requests.get('http://www.ip3366.net/', params=params, cookies=cookies, headers=headers, timeout=CONFIG["timeout"])
+            if response.status_code == 200:
+                response.encoding = 'utf-8'
+                # 使用正则表达式提取代理
+                import re
+                pattern = re.compile(r'<tr>\s*<td>([^<]+)</td>\s*<td>([^<]+)</td>\s*<td>[^<]+</td>\s*<td>([^<]+)</td>', re.IGNORECASE)
+                matches = pattern.findall(response.text)
+                page_proxies = []
+                for ip, port, protocol in matches:
+                    protocol = protocol.strip().lower()
+                    if protocol not in ('http', 'https'):
+                        if 'https' in protocol.lower():
+                            protocol = 'https'
+                        else:
+                            protocol = 'http'
+                    page_proxies.append(f"{protocol}://{ip}:{port}")
+                proxies.extend(page_proxies)
+                print(f"ip3366 第 {page} 页: 获取 {len(page_proxies)} 个代理")
+            else:
+                print(f"ip3366 第 {page} 页请求失败 (HTTP {response.status_code})")
+        except Exception as e:
+            print(f"ip3366 第 {page} 页爬取失败: {e}")
+        # 礼貌延迟
+        time.sleep(1)
+
+    return proxies
+
+
+def fetch_kuaidaili_proxies() -> List[str]:
+    """从kuaidaili.com获取代理"""
+    proxies = []
+    cookies = {
+        'channelid': '0',
+        'sid': '1769405911253474',
+        '_ss_s_uid': '472303e24f3eaa5b486647c73d70ce8f',
+        '_ga_DC1XM0P4JL': 'GS2.1.s1769487896$o2$g1$t1769489288$j60$l0$h0',
+        '_ga': 'GA1.1.776303152.1769406093',
+        '_gcl_au': '1.1.919442339.1769406093',
+        '_uetsid': '95fd0540fa7911f096430956bc926384|obrp2f|2|g32|0|2217',
+        '_uetvid': '95fcf930fa7911f0af0c178f9c85ce6f|1w2t3le|1769489259162|9|1|bat.bing.com/p/conversions/c/h',
+    }
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:147.0) Gecko/20100101 Firefox/147.0',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'zh-CN,zh;q=0.9,zh-TW;q=0.8,zh-HK;q=0.7,en-US;q=0.6,en;q=0.5',
+        'Connection': 'keep-alive',
+        'Upgrade-Insecure-Requests': '1',
+        'Sec-Fetch-Dest': 'document',
+        'Sec-Fetch-Mode': 'navigate',
+        'Sec-Fetch-Site': 'none',
+        'Sec-Fetch-User': '?1',
+        'Priority': 'u=0, i',
+    }
+
+    base_urls = [
+        'https://www.kuaidaili.com/free/dps/',  # 国内私密代理
+        'https://www.kuaidaili.com/free/fps/',  # 国外代理
+    ]
+
+    for base_url in base_urls:
+        for page in range(1, 4):  # 每类爬取3页
+            url = f"{base_url}{page}"
+            try:
+                response = requests.get(url, cookies=cookies, headers=headers, timeout=CONFIG["timeout"])
+                if response.status_code == 200:
+                    response.encoding = 'utf-8'
+                    soup = BeautifulSoup(response.text, 'html.parser')
+                    page_proxies = []
+                    tbody = soup.find('tbody', class_='kdl-table-tbody')
+                    if tbody:
+                        rows = tbody.find_all('tr')
+                        for row in rows:
+                            cols = row.find_all('td', class_='kdl-table-cell')
+                            if len(cols) >= 4:
+                                ip = cols[0].get_text(strip=True)
+                                port = cols[1].get_text(strip=True)
+                                protocol_raw = cols[3].get_text(strip=True).lower()
+                                if 'https' in protocol_raw:
+                                    protocol = 'https'
+                                else:
+                                    protocol = 'http'
+                                page_proxies.append(f"{protocol}://{ip}:{port}")
+                    proxies.extend(page_proxies)
+                    print(f"kuaidaili {base_url} 第 {page} 页: 获取 {len(page_proxies)} 个代理")
+                else:
+                    print(f"kuaidaili {base_url} 第 {page} 页请求失败 (HTTP {response.status_code})")
+            except Exception as e:
+                print(f"kuaidaili {base_url} 第 {page} 页爬取失败: {e}")
+            # 礼貌延迟
+            time.sleep(1)
+
+    # 去重
+    unique_proxies = list(set(proxies))
+    return unique_proxies
+
+
+def fetch_proxylistplus_proxies() -> List[str]:
+    """从proxylistplus.com获取代理"""
+    proxies = []
+    # 第一个请求的cookies和headers (Socks列表)
+    cookies1 = {
+        '_ga': 'GA1.2.199902941.1769488698',
+        '_gid': 'GA1.2.892468389.1769488698',
+        'cf_clearance': 'lJascryu2nrvuIiF0ak8WWr_TcBT61iK.f3lpF4KYbs-1769488721-1.2.1.1-MoNvY8ciQ2diFQrlebimLR8jinVzWgnhC5V_sRaG8ipDG_OdQpc5Gs8ZhBQC07jHMI7VyXgAKentTFYgIuZkbvpD5wjW81DDXppVPOWInsFkM9.8jjdHxZUUl_mP4MeKqsGzO461kLWKdrFjytUW47SY.TYLliD2UFR0h4E16Y4GnJNcuHUpj0rR084dxdkWER2BAOFtb0yK0wEMATwfAHoNboRGV8cdBkSTqDONMkU',
+        '_no_tracky_100814458': '1',
+        '_ga_Z3MSCTK1RG': 'GS2.2.s1769488703$o1$g1$t1769488725$j38$l0$h0',
+    }
+    # 第二个请求的cookies和headers (HTTP列表)
+    cookies2 = cookies1.copy()
+    cookies2['_ga_Z3MSCTK1RG'] = 'GS2.2.s1769488703$o1$g1$t1769488861$j60$l0$h0'
+    cookies2['_gat'] = '1'
+
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:147.0) Gecko/20100101 Firefox/147.0',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'zh-CN,zh;q=0.9,zh-TW;q=0.8,zh-HK;q=0.7,en-US;q=0.6,en;q=0.5',
+        'Connection': 'keep-alive',
+        'Upgrade-Insecure-Requests': '1',
+        'Sec-Fetch-Dest': 'document',
+        'Sec-Fetch-Mode': 'navigate',
+        'Sec-Fetch-Site': 'none',
+        'Sec-Fetch-User': '?1',
+    }
+
+    # 爬取Socks代理列表
+    try:
+        response = requests.get('https://list.proxylistplus.com/Socks-List-1', cookies=cookies1, headers=headers, timeout=CONFIG["timeout"])
+        if response.status_code == 200:
+            socks_proxies = _extract_proxylistplus_proxies(response.text, default_protocol="socks")
+            proxies.extend(socks_proxies)
+            print(f"proxylistplus Socks: 获取 {len(socks_proxies)} 个代理")
+    except Exception as e:
+        print(f"proxylistplus Socks爬取失败: {e}")
+
+    # 爬取HTTP代理列表
+    try:
+        response = requests.get('https://list.proxylistplus.com/Fresh-HTTP-Proxy-List-1', cookies=cookies2, headers=headers, timeout=CONFIG["timeout"])
+        if response.status_code == 200:
+            http_proxies = _extract_proxylistplus_proxies(response.text, default_protocol="http")
+            proxies.extend(http_proxies)
+            print(f"proxylistplus HTTP: 获取 {len(http_proxies)} 个代理")
+    except Exception as e:
+        print(f"proxylistplus HTTP爬取失败: {e}")
+
+    return proxies
+
+def _extract_proxylistplus_proxies(html, default_protocol="http"):
+    """从proxylistplus HTML中提取代理（内部辅助函数）"""
+    if not html:
+        return []
+    import re
+    soup = BeautifulSoup(html, 'lxml')
+    proxies = []
+    tables = soup.find_all('table')
+    for table in tables:
+        rows = table.find_all('tr')
+        for row in rows:
+            cols = row.find_all('td')
+            if len(cols) < 2:
+                continue
+            ip = None
+            port = None
+            protocol = default_protocol
+            # 方法1: 查找IP地址列
+            for i, col in enumerate(cols):
+                text = col.get_text(strip=True)
+                if re.match(r'^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$', text):
+                    ip = text
+                    for offset in [1, -1, 2, -2]:
+                        idx = i + offset
+                        if 0 <= idx < len(cols):
+                            port_text = cols[idx].get_text(strip=True)
+                            if port_text.isdigit() and 1 <= int(port_text) <= 65535:
+                                port = port_text
+                                break
+                    break
+            # 方法2: 假设前两列是IP和端口
+            if not ip and len(cols) >= 2:
+                col1 = cols[0].get_text(strip=True)
+                col2 = cols[1].get_text(strip=True)
+                if re.match(r'^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$', col1) and col2.isdigit():
+                    ip = col1
+                    port = col2
+            if ip and port:
+                for col in cols:
+                    text = col.get_text(strip=True).lower()
+                    if 'socks4' in text:
+                        protocol = 'socks4'
+                        break
+                    elif 'socks5' in text:
+                        protocol = 'socks5'
+                        break
+                    elif 'socks' in text:
+                        protocol = 'socks'
+                    elif 'https' in text:
+                        protocol = 'https'
+                    elif 'http' in text:
+                        protocol = 'http'
+                proxies.append(f"{protocol}://{ip}:{port}")
+    return proxies
+
+
+def fetch_uu_proxy_proxies() -> List[str]:
+    """从uu-proxy.com获取代理"""
+    proxies = []
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:147.0) Gecko/20100101 Firefox/147.0',
+        'Accept': 'application/json, text/plain, */*',
+        'Accept-Language': 'zh-CN,zh;q=0.9,zh-TW;q=0.8,zh-HK;q=0.7,en-US;q=0.6,en;q=0.5',
+        'Connection': 'keep-alive',
+        'Referer': 'https://uu-proxy.com/',
+        'Sec-Fetch-Dest': 'empty',
+        'Sec-Fetch-Mode': 'cors',
+        'Sec-Fetch-Site': 'same-origin',
+    }
+    try:
+        response = requests.get('https://uu-proxy.com/api/free', headers=headers, timeout=CONFIG["timeout"])
+        if response.status_code == 200:
+            data = response.json()
+            if data.get('success') and 'free' in data and 'proxies' in data['free']:
+                proxy_list = data['free']['proxies']
+                for proxy in proxy_list:
+                    ip = proxy.get('ip')
+                    port = proxy.get('port')
+                    scheme = proxy.get('scheme')
+                    if ip and port and scheme:
+                        proxies.append(f"{scheme}://{ip}:{port}")
+                print(f"uu-proxy: 获取 {len(proxies)} 个代理")
+            else:
+                print(f"uu-proxy API返回不成功或数据缺失: {data}")
+        else:
+            print(f"uu-proxy 请求失败 (HTTP {response.status_code})")
+    except Exception as e:
+        print(f"uu-proxy爬取失败: {e}")
+
+    return proxies
+
+
+def fetch_free_proxy_list_github() -> List[str]:
+    """从databay-labs/free-proxy-list GitHub仓库获取代理"""
+    proxies = []
+    urls = {
+        'http': 'https://raw.githubusercontent.com/databay-labs/free-proxy-list/refs/heads/master/http.txt',
+        'socks5': 'https://raw.githubusercontent.com/databay-labs/free-proxy-list/refs/heads/master/socks5.txt',
+        'https': 'https://raw.githubusercontent.com/databay-labs/free-proxy-list/refs/heads/master/https.txt'
+    }
+
+    for protocol, url in urls.items():
+        try:
+            response = requests.get(url, timeout=CONFIG["timeout"])
+            response.raise_for_status()
+
+            lines = response.text.strip().split('\n')
+            count = 0
+
+            for line in lines:
+                line = line.strip()
+                if not line:
+                    continue
+
+                # Parse ip:port format
+                parts = line.split(':')
+                if len(parts) >= 2:
+                    ip = parts[0].strip()
+                    port = parts[1].strip()
+
+                    # Simple validation
+                    if ip and port and port.isdigit():
+                        proxy = f"{protocol}://{ip}:{port}"
+                        proxies.append(proxy)
+                        count += 1
+
+            print(f"Free Proxy List GitHub {protocol}: 获取 {count} 个代理")
+
+        except Exception as e:
+            print(f"Free Proxy List GitHub {protocol} 爬取失败: {e}")
+
+    return proxies
+
+
+def fetch_nodemaven_proxies() -> List[str]:
+    """从nodemaven.com获取代理"""
+    proxies = []
+    cookies = {
+        '_gcl_au': '1.1.395836628.1769490509',
+        'burst_uid': 'ecb17473968de00b4a2cfdb597d09235',
+        'usetiful-visitor-ident': 'cd16cf01-63f0-4751-3c6a-a9c186a720b6',
+        '_ga_TWZ9W1JNF7': 'GS2.1.s1769490514$o1$g1$t1769490666$j60$l0$h1214679402',
+        '_ga': 'GA1.1.938034495.1769490515',
+        '_ga_33JL89XFQ5': 'GS2.1.s1769490514$o1$g1$t1769490666$j60$l0$h949295014',
+        'pys_session_limit': 'true',
+        'pys_start_session': 'true',
+        'pys_first_visit': 'true',
+        'pysTrafficSource': 'google.com',
+        'pys_landing_page': 'https://nodemaven.com/free-proxy-list/',
+        'last_pysTrafficSource': 'google.com',
+        'last_pys_landing_page': 'https://nodemaven.com/free-proxy-list/',
+        'PAPVisitorId': 'NQOsAK66LrOZFB1lgf6zPyADtLjKUNvW',
+        '_uetsid': '407aa4f0fb3e11f08e02df65b0a9dcf4',
+        '_uetvid': '407a8c60fb3e11f0b62d07e6397ed1bf',
+        '_ym_uid': '1769490524954226209',
+        '_ym_d': '1769490524',
+        '_ym_isad': '2',
+        'intercom-id-yvkc0rpk': '38d805d8-fd48-40ec-a593-93081a40a772',
+        'intercom-session-yvkc0rpk': '',
+        'intercom-device-id-yvkc0rpk': 'df456bee-a130-4b86-83ce-b90d5e295b75',
+        '_ym_visorc': 'w',
+        'AMP_29d2d968b7': 'JTdCJTIyZGV2aWNlSWQlMjIlM0ElMjIxNGU4YWEyZi0zODc3LTQ4N2EtYTdhNS02NjJmZWQ3ODVlNmQlMjIlMkMlMjJzZXNzaW9uSWQlMjIlM0ExNzY5NDkwNTI2MDgwJTJDJTIyb3B0T3V0JTIyJTNBZmFsc2UlMkMlMjJsYXN0RXZlbnRUaW1lJTIyJTNBMTc2OTQ5MDUzMDk5MCUyQyUyMmxhc3RFdmVudElkJTIyJTNBNCUyQyUyMnBhZ2VDb3VudGVyJTIyJTNBMSU3RA==',
+        'AMP_MKTG_29d2d968b7': 'JTdCJTIycmVmZXJyZXIlMjIlM0ElMjJodHRwcyUzQSUyRiUyRnd3dy5nb29nbGUuY29tJTJGJTIyJTJDJTIycmVmZXJyaW5nX2RvbWFpbiUyMiUzQSUyMnd3dy5nb29nbGUuY29tJTIyJTdE',
+        '_clck': 'kwugn8%5E2%5Eg32%5E0%5E2218',
+        '_clsk': '1ohse77%5E1769490535520%5E1%5E1%5Eh.clarity.ms%2Fcollect',
+    }
+
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:147.0) Gecko/20100101 Firefox/147.0',
+        'Accept': 'application/json, text/javascript, */*; q=0.01',
+        'Accept-Language': 'zh-CN,zh;q=0.9,zh-TW;q=0.8,zh-HK;q=0.7,en-US;q=0.6,en;q=0.5',
+        'X-Requested-With': 'XMLHttpRequest',
+        'Connection': 'keep-alive',
+        'Referer': 'https://nodemaven.com/free-proxy-list/',
+        'Sec-Fetch-Dest': 'empty',
+        'Sec-Fetch-Mode': 'cors',
+        'Sec-Fetch-Site': 'same-origin',
+    }
+
+    base_params = {
+        'per_page': '100',
+        'country': '',
+        'protocol': '',
+        'type': '',
+        'latency': '',
+    }
+
+    for page in range(1, 6):
+        params = base_params.copy()
+        params['page'] = str(page)
+        try:
+            response = requests.get('https://nodemaven.com/wp-json/proxy-list/v1/proxies',
+                                  params=params, cookies=cookies, headers=headers, timeout=CONFIG["timeout"])
+            response.raise_for_status()
+            data = response.json()
+            # Response is a dict with 'proxies' key
+            if isinstance(data, dict) and 'proxies' in data:
+                proxy_list = data['proxies']
+                count = 0
+                for proxy in proxy_list:
+                    ip = proxy.get('ip_address')
+                    port = proxy.get('port')
+                    protocol = proxy.get('protocol')
+                    if ip and port and protocol:
+                        # Convert protocol to lowercase for standard format
+                        protocol_lower = protocol.lower()
+                        proxies.append(f"{protocol_lower}://{ip}:{port}")
+                        count += 1
+                print(f"Nodemaven 第 {page} 页: 获取 {count} 个代理")
+        except Exception as e:
+            print(f"Nodemaven 第 {page} 页爬取失败: {e}")
+
+    return proxies
+
+
+def fetch_freeproxy_world_proxies() -> List[str]:
+    """从freeproxy.world获取代理"""
+    proxies = []
+    cookies = {
+        '_ga': 'GA1.1.1442368388.1769491256',
+        '_gid': 'GA1.2.426402489.1769491256',
+        '_ga_H19S2TE1ZB': 'GS2.1.s1769491256$o1$g1$t1769491958$j57$l0$h0',
+        'cf_clearance': 'Z4_FxYLcTmVfovjVLRFgKSoIALWHiM1x8VuSOcxCYJg-1769491253-1.2.1.1-GMWlvnlWijcH9nGG82i6L2EzKa44X02mxHf9aj.Jx48B16QL4yY1aIPptpym1DeSV0FP1ITwtnxaos2eDCXY0D0MC.PzWhXTyhkiGiS1jQ_VeOph8wZqenZp1epVu6lbLK1bj9mtQ1gBwMYY2Wcl6yloWTNTkDY_P9OiCd.gfp2BbSZy3BKW1yp9x86H2xLqGv03camFsXWNGj6J0ukdoIco1yIdOIebOqAaKSfpdTA',
+        '__gads': 'ID=9318efd53294ee26:T=1769491256:RT=1769491677:S=ALNI_MZVYWcWakVX-hy7VlpQXjxR_M3NJA',
+        '__gpi': 'UID=00001332563e516b:T=1769491256:RT=1769491677:S=ALNI_MYgbvtqWNUstYh-TWnUkR2lRB1hKQ',
+        '__eoi': 'ID=b7d19480640f7333:T=1769491256:RT=1769491677:S=AA-Afjbh0pNtJX5wgKDR75m2qVaT',
+        'FCCDCF': '%5Bnull%2Cnull%2Cnull%2Cnull%2Cnull%2Cnull%2C%5B%5B32%2C%22%5B%5C%229c4ce7b4-b0eb-4267-b922-5efd65d3c3a3%5C%22%2C%5B1769491265%2C414000000%5D%5D%22%5D%5D%5D',
+        'FCOEC': '%5B%5B%5B28%2C%22%5Bnull%2C%5Bnull%2C0%2C%5B1769491944%2C111942000%5D%2C1%5D%5D%22%5D]5D%5D',
+        'FCNEC': '%5B%5B%22AKsRol9C7GvJ5Z8SXUljQI5dnaFlHAS7P9ThzH7M3x6csHsP9Clxjpvw92UU2b-ermqlGcTe9bKXspyq_cg1CyGX78jk3m-EVr-ryES6QhRhLyZB9H-6ychrFn30-lrO2joK4HVD8k-cdff6mhfyzmbPUvFfX3BxmQ%3D%3D%22%5D%2Cnull%2C%5B%5B21%2C%22%5B%5B%5B%5B5%2C1%2C%5B0%5D%5D%2C%5B1769491269%2C704339000%5D%2C%5B1209600%5D%5D%5D%5D%22%5D]5D%5D',
+        '_gat_gtag_UA_138692554_2': '1',
+    }
+
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:147.0) Gecko/20100101 Firefox/147.0',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'zh-CN,zh;q=0.9,zh-TW;q=0.8,zh-HK;q=0.7,en-US;q=0.6,en;q=0.5',
+        'Connection': 'keep-alive',
+        'Upgrade-Insecure-Requests': '1',
+        'Sec-Fetch-Dest': 'document',
+        'Sec-Fetch-Mode': 'navigate',
+        'Sec-Fetch-Site': 'none',
+        'Sec-Fetch-User': '?1',
+        'Priority': 'u=0, i',
+    }
+
+    # 爬取第1页到第5页
+    for page in range(1, 6):
+        params = {
+            'type': '',
+            'anonymity': '',
+            'country': '',
+            'speed': '',
+            'port': '',
+            'page': str(page),
+        }
+
+        try:
+            response = requests.get('https://www.freeproxy.world/',
+                                  params=params,
+                                  cookies=cookies,
+                                  headers=headers,
+                                  timeout=CONFIG["timeout"])
+            response.raise_for_status()
+        except Exception as e:
+            print(f"FreeProxy.World 第 {page} 页请求失败: {e}")
+            continue
+
+        soup = BeautifulSoup(response.text, 'html.parser')
+
+        # 找到代理表格
+        table = soup.find('table', class_='table')
+        if not table:
+            print(f"FreeProxy.World 第 {page} 页: 未找到表格")
+            continue
+
+        tbody = table.find('tbody')
+        if not tbody:
+            print(f"FreeProxy.World 第 {page} 页: 未找到表格体")
+            continue
+
+        rows = tbody.find_all('tr')
+        page_proxies = []
+        for row in rows:
+            cols = row.find_all('td')
+            if len(cols) < 6:  # 需要至少6列
+                continue
+
+            try:
+                # 提取IP地址
+                ip = cols[0].text.strip()
+
+                # 提取端口（可能在<a>标签内）
+                port_elem = cols[1].find('a')
+                port = port_elem.text.strip() if port_elem else cols[1].text.strip()
+
+                # 提取协议类型（第6列，索引5）
+                type_cell = cols[5]
+
+                # 检查是否有徽章(badge)标签
+                badges = type_cell.find_all('a', class_='badge')
+                if badges:
+                    # 取第一个徽章作为协议
+                    protocol = badges[0].text.strip().lower()
+                else:
+                    # 直接提取文本
+                    protocol = type_cell.text.strip().lower()
+
+                # 标准化协议字符串
+                if 'socks5' in protocol:
+                    protocol = 'socks5'
+                elif 'socks4' in protocol:
+                    protocol = 'socks4'
+                elif 'socks' in protocol:
+                    protocol = 'socks'  # 通用socks
+                elif 'https' in protocol:
+                    protocol = 'https'
+                else:
+                    protocol = 'http'  # 默认HTTP
+
+                proxy = f"{protocol}://{ip}:{port}"
+                page_proxies.append(proxy)
+
+            except Exception:
+                # 跳过解析错误的行
+                continue
+
+        print(f"FreeProxy.World 第 {page} 页: 获取 {len(page_proxies)} 个代理")
+        proxies.extend(page_proxies)
+
+        # 添加延迟，避免请求过快
+        if page < 5:
+            time.sleep(1)
+
+    return proxies
+
+
+def fetch_proxydb_proxies() -> List[str]:
+    """从proxydb.net获取代理"""
+    proxies = []
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:147.0) Gecko/20100101 Firefox/147.0',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'zh-CN,zh;q=0.9,zh-TW;q=0.8,zh-HK;q=0.7,en-US;q=0.6,en;q=0.5',
+        'Connection': 'keep-alive',
+        'Referer': 'https://proxydb.net/',
+        'Upgrade-Insecure-Requests': '1',
+        'Sec-Fetch-Dest': 'document',
+        'Sec-Fetch-Mode': 'navigate',
+        'Sec-Fetch-Site': 'same-origin',
+        'Sec-Fetch-User': '?1',
+        'Priority': 'u=0, i',
+    }
+
+    # 辅助函数：从HTML提取代理
+    def extract_proxies_from_html(html):
+        soup = BeautifulSoup(html, 'html.parser')
+        proxy_list = []
+
+        # 方法1: 直接查找IP:Port格式的文本
+        ip_port_pattern = re.compile(r'(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\s*[:：]\s*(\d{2,5})')
+        matches = ip_port_pattern.findall(html)
+        for ip, port in matches:
+            protocol = 'http'  # 默认
+
+            # 查找包含此IP:Port的HTML元素
+            ip_port_text = f"{ip}:{port}"
+            for element in soup.find_all(text=re.compile(re.escape(ip_port_text))):
+                parent_text = element.parent.get_text().lower()
+                if 'socks4' in parent_text:
+                    protocol = 'socks4'
+                elif 'socks5' in parent_text:
+                    protocol = 'socks5'
+                elif 'https' in parent_text:
+                    protocol = 'https'
+                elif 'http' in parent_text:
+                    protocol = 'http'
+
+                proxy_list.append((protocol, ip, port))
+                break  # 找到第一个就跳出
+
+        # 方法2: 查找表格结构
+        table_selectors = [
+            'table',
+            '.table',
+            '.proxy-table',
+            '.proxy-list',
+            'tbody'
+        ]
+
+        for selector in table_selectors:
+            tables = soup.select(selector)
+            for table in tables:
+                rows = table.find_all('tr')
+                for row in rows:
+                    cells = row.find_all(['td', 'div', 'span'])
+                    cell_texts = [cell.get_text(strip=True) for cell in cells]
+                    for text in cell_texts:
+                        ip_matches = re.findall(r'\b(?:\d{1,3}\.){3}\d{1,3}\b', text)
+                        if ip_matches:
+                            ip = ip_matches[0]
+                            port_matches = re.findall(r'\b(\d{2,5})\b', text)
+                            for port in port_matches:
+                                if port != ip.split('.')[-1]:
+                                    protocol = 'http'
+                                    row_text = row.get_text().lower()
+                                    if 'socks4' in row_text:
+                                        protocol = 'socks4'
+                                    elif 'socks5' in row_text:
+                                        protocol = 'socks5'
+                                    elif 'https' in row_text:
+                                        protocol = 'https'
+
+                                    proxy_list.append((protocol, ip, port))
+                                    break
+
+        # 去重
+        unique_proxies = []
+        seen = set()
+        for protocol, ip, port in proxy_list:
+            key = f"{ip}:{port}"
+            if key not in seen:
+                seen.add(key)
+                unique_proxies.append((protocol, ip, port))
+
+        return unique_proxies
+
+    base_url = 'https://proxydb.net/'
+
+    # 爬取多个offset页面
+    for offset in range(0, 151, 30):
+        params = {'offset': str(offset)}
+        try:
+            response = requests.get(base_url, params=params, headers=headers, timeout=CONFIG["timeout"])
+            response.raise_for_status()
+
+            extracted = extract_proxies_from_html(response.text)
+            count = 0
+            for protocol, ip, port in extracted:
+                proxies.append(f"{protocol}://{ip}:{port}")
+                count += 1
+
+            print(f"ProxyDB offset={offset}: 获取 {count} 个代理")
+
+        except Exception as e:
+            print(f"ProxyDB offset={offset} 爬取失败: {e}")
+            continue
+
+    return proxies
+
+
+def fetch_proxy5_proxies() -> List[str]:
+    """从proxy5.net获取代理"""
+    proxies = []
+    # 尝试导入cloudscraper，如果不可用则跳过
+    try:
+        import cloudscraper
+    except ImportError:
+        print("Proxy5: cloudscraper模块未安装，跳过爬取")
+        return proxies
+
+    # 用户提供的cookies和headers
+    cookies = {
+        '_ga_2ZGKN4M0P5': 'GS2.1.s1769491268$o1$g0$t1769491268$j60$l0$h0',
+        '_ga': 'GA1.1.1858901822.1769491268',
+        '_gcl_au': '1.1.830845841.1769491268',
+        '_ym_uid': '1769491301957709155',
+        '_ym_d': '1769491301',
+        '_ym_isad': '2',
+        'cf_clearance': 'mcKP.1Sy6F1LN39L6Lt1sHb4Z.uUv4kOh_M3b.ahuQA-1769491300-1.2.1.1-dQwXgN9lzisPgD3wjZeUIGM37gol8xQt58i4gF0wUPSkiY4wu4fGbEIGY_AARwg1GH9TeELFczAG1i7zF0fxSM1EVKyT9WH0pdaUxP3af98183TmD_YoJqvtzN7JqwDGnbBtafqbeuRXnC.9eaEcwR9XFHLIPLOWRWsVsOX1B6DMNn.g9y3Rz7RLlvbZ531uVtAlVNMzhNGbLONJHmcSYCX1rsmnX63Wzz3F5kVg_5A',
+        '_ym_visorc': 'w',
+    }
+
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:147.0) Gecko/20100101 Firefox/147.0',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'zh-CN,zh;q=0.9,zh-TW;q=0.8,zh-HK;q=0.7,en-US;q=0.6,en;q=0.5',
+        'Referer': 'https://www.google.com/',
+        'Connection': 'keep-alive',
+        'Upgrade-Insecure-Requests': '1',
+        'Sec-Fetch-Dest': 'document',
+        'Sec-Fetch-Mode': 'navigate',
+        'Sec-Fetch-Site': 'cross-site',
+        'Sec-Fetch-User': '?1',
+        'Priority': 'u=0, i',
+    }
+
+    # 需要爬取的国家/地区列表
+    countries = [
+        'hong-kong',
+        'canada',
+        'usa',
+        'india',
+        'japan',
+        'germany',
+        'france',
+        'united-kingdom',
+    ]
+
+    base_url = 'https://proxy5.net/free-proxy/'
+
+    def normalize_protocol(proto):
+        """将协议字符串标准化为小写形式"""
+        proto_lower = proto.lower()
+        if 'socks' in proto_lower:
+            # 统一使用 socks5
+            return 'socks5'
+        elif 'https' in proto_lower:
+            return 'https'
+        else:
+            # 默认为 http
+            return 'http'
+
+    scraper = cloudscraper.create_scraper()
+
+    for country in countries:
+        url = base_url + country
+        try:
+            response = scraper.get(url, cookies=cookies, headers=headers, timeout=CONFIG["timeout"])
+            if response.status_code == 200:
+                soup = BeautifulSoup(response.text, 'html.parser')
+                page_proxies = []
+                # 查找所有包含IP地址的td元素
+                for td in soup.find_all('td'):
+                    strong = td.find('strong')
+                    if strong:
+                        ip = strong.text.strip()
+                        # 简单验证IP地址格式
+                        import re
+                        if re.match(r'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}', ip):
+                            # 找到父级tr
+                            tr = td.find_parent('tr')
+                            if tr:
+                                # 获取该行所有td
+                                tds = tr.find_all('td')
+                                if len(tds) >= 4:
+                                    # IP是第一个td
+                                    # 端口是第二个td
+                                    port = tds[1].text.strip()
+                                    # 协议是第三个td
+                                    protocol_raw = tds[2].text.strip()
+                                    protocol = normalize_protocol(protocol_raw)
+                                    page_proxies.append(f"{protocol}://{ip}:{port}")
+                proxies.extend(page_proxies)
+                print(f"Proxy5 {country}: 获取 {len(page_proxies)} 个代理")
+        except Exception as e:
+            print(f"Proxy5 {country} 爬取失败: {e}")
+        # 延迟一下，避免请求过快
+        time.sleep(1)
+
+    return proxies
+
+
+def fetch_hookzof_proxies() -> List[str]:
+    """从hookzof/socks5_list GitHub仓库获取SOCKS5代理"""
+    proxies = []
+    url = "https://raw.githubusercontent.com/hookzof/socks5_list/master/proxy.txt"
+
+    try:
+        response = requests.get(url, timeout=CONFIG["timeout"])
+        if response.status_code == 200:
+            lines = response.text.strip().split('\n')
+            count = 0
+            for line in lines:
+                line = line.strip()
+                if line and ':' in line:
+                    # Split IP and port
+                    ip_port = line.split(':', 1)
+                    if len(ip_port) == 2:
+                        ip = ip_port[0].strip()
+                        port = ip_port[1].strip()
+                        if ip and port:
+                            # 移除端口中的非数字字符
+                            import re
+                            port_clean = ''.join(filter(str.isdigit, port))
+                            if port_clean:
+                                proxies.append(f"socks5://{ip}:{port_clean}")
+                                count += 1
+            print(f"Hookzof SOCKS5: 获取 {count} 个代理")
+    except Exception as e:
+        print(f"Hookzof SOCKS5 爬取失败: {e}")
+
+    return proxies
+
+
+def fetch_ebrasha_proxies() -> List[str]:
+    """从多个GitHub仓库获取代理（ebrasha, stormsia, iplocate, vakhov）"""
+    proxies = []
+    # 代理URL列表
+    proxy_urls = [
+        ("https://raw.githubusercontent.com/ebrasha/abdal-proxy-hub/refs/heads/main/http-proxy-list-by-EbraSha.txt", "http"),
+        ("https://raw.githubusercontent.com/ebrasha/abdal-proxy-hub/refs/heads/main/https-proxy-list-by-EbraSha.txt", "https"),
+        ("https://raw.githubusercontent.com/ebrasha/abdal-proxy-hub/refs/heads/main/socks4-proxy-list-by-EbraSha.txt", "socks4"),
+        ("https://raw.githubusercontent.com/ebrasha/abdal-proxy-hub/refs/heads/main/socks5-proxy-list-by-EbraSha.txt", "socks5"),
+        ("https://raw.githubusercontent.com/stormsia/proxy-list/refs/heads/main/working_proxies.txt", "http"),  # 默认HTTP
+        ("https://raw.githubusercontent.com/iplocate/free-proxy-list/refs/heads/main/all-proxies.txt", "http"),  # 默认HTTP
+        ("https://raw.githubusercontent.com/vakhov/fresh-proxy-list/refs/heads/master/http.txt", "http"),
+        ("https://github.com/vakhov/fresh-proxy-list/raw/refs/heads/master/https.txt", "https"),
+        ("https://github.com/vakhov/fresh-proxy-list/raw/refs/heads/master/socks4.txt", "socks4"),
+        ("https://github.com/vakhov/fresh-proxy-list/raw/refs/heads/master/socks5.txt", "mixed"),  # 特殊处理，文件中已包含协议
+    ]
+
+    import re
+    ip_port_pattern = re.compile(r'^(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}):(\d+)$')
+    protocol_pattern = re.compile(r'^(socks[45]|http|https)://\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}:\d+$')
+
+    for url, protocol in proxy_urls:
+        try:
+            response = requests.get(url, timeout=CONFIG["timeout"])
+            if response.status_code == 200:
+                content = response.text
+                lines = content.splitlines()
+                count = 0
+                for line in lines:
+                    line = line.strip()
+                    if not line or line.startswith('#'):
+                        continue
+
+                    # 如果协议是mixed，检查是否已包含协议
+                    if protocol == "mixed":
+                        if protocol_pattern.match(line):
+                            proxies.append(line)
+                            count += 1
+                        # 也可能有未加协议的IP:端口
+                        elif ip_port_pattern.match(line):
+                            # 无法确定协议，跳过
+                            pass
+                    else:
+                        match = ip_port_pattern.match(line)
+                        if match:
+                            ip, port = match.groups()
+                            proxies.append(f"{protocol}://{ip}:{port}")
+                            count += 1
+                print(f"Ebrasha {url.split('/')[3]}: 获取 {count} 个代理")
+        except Exception as e:
+            print(f"Ebrasha {url} 爬取失败: {e}")
+
     return proxies
 
 
@@ -382,7 +1405,7 @@ def crawl_proxies() -> List[str]:
 
     all_proxies = []
 
-    # 从多个源爬取（已移除失效源：proxy-list.download, proxydb.net）
+    # 从多个源爬取
     sources = [
         fetch_geonode_proxies,
         fetch_free_proxy_list,
@@ -392,6 +1415,18 @@ def crawl_proxies() -> List[str]:
         fetch_sockslist_us_proxies,
         fetch_zdaye_proxies,
         fetch_spys_one_proxies,
+        fetch_89ip_proxies,
+        fetch_ip3366_proxies,
+        fetch_kuaidaili_proxies,
+        fetch_proxylistplus_proxies,
+        fetch_uu_proxy_proxies,
+        fetch_free_proxy_list_github,
+        fetch_nodemaven_proxies,
+        fetch_freeproxy_world_proxies,
+        fetch_proxydb_proxies,
+        fetch_proxy5_proxies,
+        fetch_hookzof_proxies,
+        fetch_ebrasha_proxies,
     ]
 
     with ThreadPoolExecutor(max_workers=CONFIG["crawler_workers"]) as executor:
