@@ -1740,13 +1740,13 @@ def main():
         return
 
     # 验证新代理
-    valid_new_proxies = validate_proxies(new_proxies)
+    valid_new_proxies = validate_proxies(new_proxies+existing_proxies)
     if not valid_new_proxies:
         print("没有有效的新代理")
         return
 
     # 合并代理
-    all_proxies = merge_proxies(valid_new_proxies, existing_proxies)
+    all_proxies = merge_proxies(valid_new_proxies, [])
     print(f"合并后总代理: {len(all_proxies)} 个")
 
     # 保存代理
