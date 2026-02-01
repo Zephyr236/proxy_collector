@@ -327,8 +327,7 @@ def fetch_spys_one_proxies() -> List[str]:
     countries = ["FR", "US", "RU", "HK", "JP", "BR", "SG", "ID", "FI", "TH", "CO", "MX"]
 
     class SpysOneCrawler:
-        def __init__(self, cookies, headers, timeout):
-            self.cookies = cookies
+        def __init__(self, headers, timeout):
             self.headers = headers
             self.timeout = timeout
             self.vars_dict = None
@@ -504,7 +503,7 @@ def fetch_spys_one_proxies() -> List[str]:
         country_headers = headers.copy()
         country_headers['Referer'] = f'https://spys.one/free-proxy-list/{country}/'
 
-        crawler = SpysOneCrawler(cookies, country_headers, CONFIG["timeout"])
+        crawler = SpysOneCrawler(country_headers, CONFIG["timeout"])
         url = f'https://spys.one/free-proxy-list/{country}/'
         try:
             proxies = crawler.crawl(url, data=data)
