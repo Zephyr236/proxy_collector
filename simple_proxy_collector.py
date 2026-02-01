@@ -298,29 +298,18 @@ def fetch_zdaye_proxies() -> List[str]:
 def fetch_spys_one_proxies() -> List[str]:
     """从spys.one获取代理（使用JavaScript端口解码）"""
     # 使用spys_one项目中的cookies和headers（可能需要更新）
-    cookies = {
-        '_ga_XWX5S73YKH': 'GS2.1.s1769449589$o3$g1$t1769450226$j33$l0$h0',
-        '_ga': 'GA1.1.1359544579.1769440694',
-        'cf_clearance': 'VsncOXiIsWN2re2BgDUY_V3kWdwqP9kZO5pwK8R3o0Q-1769449587-1.2.1.1-ok1wH6F5lcq85aAlesC3P5z3RWR9zvkcjg4O_doBrzJZJjlk4OHfCcpvXcBlGdGzdzi63k1mGcABjj.mF2RDscx3ORO1UjA2AYTco8TcCjl7s7mYmGhfkdSv0pe1_va0CMiXuq6pQBoItfhnA.gn7exHakx4021moiKOMyDezsBfvt4u4HR_qbEXQxKgGqF65.wGb3W69w8nX4MH8QcODEEHNxkdiKTXe6iQ8iJuwWk',
-        '__gads': 'ID=046e27d2b5f6af88:T=1769440694:RT=1769450197:S=ALNI_MbR6GNw7GvproRaDuOdzfNHphYHIA',
-        '__gpi': 'UID=000011eb94f50545:T=1769440694:RT=1769450197:S=ALNI_Ma--28Sf8jk0c0dOggdMXrMnO-tlw',
-        '__eoi': 'ID=d96e54866ede7675:T=1769440694:RT=1769450197:S=AA-AfjZLdPr_vYiyIxCRZowx7irr',
-        'FCCDCF': '%5Bnull%2Cnull%2Cnull%2Cnull%2Cnull%2Cnull%2C%5B%5B32%2C%22%5B%5C%22481bf5c4-4d9b-42c8-a095-0ad81d454715%5C%22%2C%5B1769440698%2C131000000%5D%5D%22%5D%5D%5D',
-        'FCNEC': '%5B%5B%22AKsRol8sf4vDs3kowdjuAukPey5BgPaWovJ9B2lgRkDBDnmSV1kJw4xidx0F1-q_2wDrmMm7-1GzKU4b_Le2d5qsqNYmOItuWak_FfpkA9QWLNW6qyblvCU8bU4RWg-fGHS-8al_NWFwvSr3DMWt5SouOz0Oi_PIGw%3D%3D%22%5D%5D',
-    }
-
+    
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:147.0) Gecko/20100101 Firefox/147.0',
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
         'Accept-Language': 'zh-CN,zh;q=0.9,zh-TW;q=0.8,zh-HK;q=0.7,en-US;q=0.6,en;q=0.5',
-        'Content-Type': 'application/x-www-form-urlencoded',
-        'Origin': 'https://spys.one',
+        # 'Accept-Encoding': 'gzip, deflate, br, zstd',
+        'Sec-GPC': '1',
         'Connection': 'keep-alive',
-        'Referer': 'https://spys.one/free-proxy-list/FR/',
         'Upgrade-Insecure-Requests': '1',
         'Sec-Fetch-Dest': 'document',
         'Sec-Fetch-Mode': 'navigate',
-        'Sec-Fetch-Site': 'same-origin',
+        'Sec-Fetch-Site': 'none',
         'Sec-Fetch-User': '?1',
         'Priority': 'u=0, i',
     }
@@ -347,9 +336,9 @@ def fetch_spys_one_proxies() -> List[str]:
         def fetch(self, url, data=None):
             """Fetch page content, use POST if data provided"""
             if data:
-                resp = requests.post(url, cookies=self.cookies, headers=self.headers, data=data, timeout=self.timeout)
+                resp = requests.post(url, headers=self.headers, data=data, timeout=self.timeout)
             else:
-                resp = requests.get(url, cookies=self.cookies, headers=self.headers, timeout=self.timeout)
+                resp = requests.get(url, headers=self.headers, timeout=self.timeout)
             resp.raise_for_status()
             return resp.text
 
